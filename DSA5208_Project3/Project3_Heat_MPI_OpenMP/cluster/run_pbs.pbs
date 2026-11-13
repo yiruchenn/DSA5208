@@ -1,0 +1,35 @@
+#!/bin/bash
+#PBS -N jacobi_hybrid
+#PBS -j oe
+#PBS -l select=1:ncpus=8:mpiprocs=4:ompthreads=2:mem=8gb
+#PBS -l walltime=01:00:00
+#PBS -V
+
+# Example for PBS Pro clusters (including NUS HPC systems documented with PBS).
+# Edit the project/account/queue directives if your cluster requires them.
+# e.g. #PBS -P YOUR_PROJECT     or     #PBS -q YOUR_QUEUE
+set -euo pipefail
+cd "${PBS_O_WORKDIR:?PBS_O_WORKDIR is not set}"
+
+# Load the compiler and MPI modules used by YOUR cluster before 'make'.
+# The exact module names vary: inspect `module avail` / `module list`.
+# module load gcc
+# module load openmpi
+
+command -v mpicxx >/dev/null || { echo 'ERROR: mpicxx unavailable; load MPI module'; exit 1; }
+command -v mpiexec >/dev/null || { echo 'ERROR: mpiexec unavailable; load MPI module'; exit 1; }
+make -j 2
+mkdir -p results
+python3 scripts/validate.py
+
+# Strong scaling: fixed global grid, varying number of cores.
+python3 scripts/benchmark.py --scaling strong --nx 1024 --ny 1024 \
+    --steps 400 --ranks 1,2,4 --threads 1,2 --max-cores 8 \
+    --repeats 3 --warmup 1 --output results/strong_scaling.csv
+
+# Weak scaling: approximately fixed grid area per core.
+python3 scripts/benchmark.py --scaling weak --nx 512 --ny 512 \
+    --steps 300 --ranks 1,2,4 --threads 1,2 --max-cores 8 \
+    --repeats 3 --warmup 1 --output results/weak_scaling.csv
+
+echo 'Benchmarks completed. Copy the CSVs to a machine with matplotlib to plot.'
